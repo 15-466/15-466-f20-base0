@@ -125,7 +125,12 @@ bool PongMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 			(evt.motion.x + 0.5f) / window_size.x * 2.0f - 1.0f,
 			(evt.motion.y + 0.5f) / window_size.y *-2.0f + 1.0f
 		);
-		left_paddle.y = (clip_to_court * glm::vec3(clip_mouse, 1.0f)).y;
+		if(pause_flag == 0) left_paddle.y = (clip_to_court * glm::vec3(clip_mouse, 1.0f)).y;
+	}
+	else if (evt.type == SDL_KEYDOWN && evt.key.keysym.sym == SDLK_ESCAPE) {
+		std::cout << "Pause here " << std::endl;
+		pause_flag = pause_flag == 0 ? 1 : 0;
+		return true;
 	}
 
 	return false;
@@ -133,6 +138,9 @@ bool PongMode::handle_event(SDL_Event const &evt, glm::uvec2 const &window_size)
 
 void PongMode::update(float elapsed) {
 
+	// if pause, do not update
+	if (pause_flag) return;
+	
 	static std::mt19937 mt; //mersenne twister pseudo-random number generator
 
 	//----- paddle update -----

@@ -39,9 +39,11 @@ struct PongMode : Mode {
 	float ai_offset = 0.0f;
 	float ai_offset_update = 0.0f;
 
+	uint32_t pause_flag = 0;
+
 	//----- pretty gradient trails -----
 
-	float trail_length = 1.3f;
+	float trail_length = 0.0f;
 	std::deque< glm::vec3 > ball_trail; //stores (x,y,age), oldest elements first
 
 	//----- opengl assets / helpers ------

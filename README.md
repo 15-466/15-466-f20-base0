@@ -1,6 +1,6 @@
-# (TODO: your game's title)
+# Shooting Pong
 
-Author: (TODO: your name)
+Author: Tianjian Huang
 
 Design: (TODO: In two sentences or fewer, describe what is new and interesting about your game.)
 
@@ -10,8 +10,24 @@ Screen Shot:
 
 How To Play:
 
-(TODO: describe the controls and (if needed) goals/strategy.)
+Your cannon is on the left side, and your target (red plate) is on the right side.
+Other objects are obstacles.
+Your goal is to shoot the target. When you hit you gain 1 point, but when you miss
+you lose 1 health. The game is over when you remain zero health. Initially you have
+3 healths.
 
-Sources: (TODO: list a source URL for any assets you did not create yourself. Make sure you have a license for the asset.)
+------------------------------------------------------------------------------------
+
+Operation:
+LMB: shoot
+Move mouse: adjust cannon direction
+Esc: to the pause UI
+Click "resume": continue to play
+Click "quit": quit the game
+
+
+
+Sources: 
+https://github.com/cccyf/15-466-f20-base0/blob/master/PongMode.cpp
 
 This game was built with [NEST](NEST.md).

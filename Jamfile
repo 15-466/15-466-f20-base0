@@ -114,7 +114,7 @@ if $(OS) = NT { #Windows
 
 #Store the names of all the .cpp files to build into a variable:
 GAME_NAMES =
-	PongMode
+	ShootMode
 	main
 	load_save_png
 	gl_compile_program
@@ -127,4 +127,4 @@ LOCATE_TARGET = objs ; #put objects in 'objs' directory
 Objects $(GAME_NAMES:S=.cpp) ;
 
 LOCATE_TARGET = dist ; #put main in 'dist' directory
-MainFromObjects pong : $(GAME_NAMES:S=$(SUFOBJ)) ;
+MainFromObjects ShootPong : $(GAME_NAMES:S=$(SUFOBJ)) ;

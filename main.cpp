@@ -2,7 +2,7 @@
 #include "Mode.hpp"
 
 //The 'PongMode' mode plays the game:
-#include "PongMode.hpp"
+#include "ShootMode.hpp"
 
 //GL.hpp will include a non-namespace-polluting set of opengl prototypes:
 #include "GL.hpp"
@@ -47,7 +47,7 @@ int main(int argc, char **argv) {
 
 	//create window:
 	SDL_Window *window = SDL_CreateWindow(
-		"gp21 pong", //TODO: remember to set a title for your game!
+		"Shooting Pong - by Tianjian", //TODO: remember to set a title for your game!
 		SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED,
 		640, 480, //TODO: modify window size if you'd like
 		SDL_WINDOW_OPENGL
@@ -84,10 +84,10 @@ int main(int argc, char **argv) {
 	}
 
 	//Hide mouse cursor (note: showing can be useful for debugging):
-	//SDL_ShowCursor(SDL_DISABLE);
+	SDL_ShowCursor(SDL_ENABLE);
 
 	//------------ create game mode + make current --------------
-	Mode::set_current(std::make_shared< PongMode >());
+	Mode::set_current(std::make_shared< ShootMode >());
 
 	//------------ main loop ------------
 
@@ -110,6 +110,7 @@ int main(int argc, char **argv) {
 	while (Mode::current) {
 		//every pass through the game loop creates one frame of output
 		//  by performing three steps:
+		
 
 		{ //(1) process any events that are pending
 			static SDL_Event evt;
@@ -120,7 +121,8 @@ int main(int argc, char **argv) {
 				}
 				//handle input:
 				if (Mode::current && Mode::current->handle_event(evt, window_size)) {
-					// mode handled it; great
+					// change here: process Esc pause
+
 				} else if (evt.type == SDL_QUIT) {
 					Mode::set_current(nullptr);
 					break;
