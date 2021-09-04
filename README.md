@@ -28,6 +28,6 @@ Click "quit": quit the game
 
 
 Sources: 
-https://github.com/cccyf/15-466-f20-base0/blob/master/PongMode.cpp
+https://github.com/bobowitz/15-666-boat-game
 
 This game was built with [NEST](NEST.md).

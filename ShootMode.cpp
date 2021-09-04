@@ -117,6 +117,22 @@ ShootMode::~ShootMode() {
 	white_tex = 0;
 }
 
+glm::mat4 ShootMode::get_rotation_matrix(glm::vec2 const& center, float const& angle)
+{
+	glm::mat4 rotate_around_origin_mat = glm::mat4(1.0f);
+	rotate_around_origin_mat = glm::rotate(rotate_around_origin_mat, angle, glm::vec3(0.0, 0.0, 1.0));
+
+	glm::vec2 rotation_center_2d = center;
+
+	glm::mat4 translate_to_origin_mat = glm::mat4(1.0f);
+	translate_to_origin_mat = glm::translate(translate_to_origin_mat, glm::vec3(-rotation_center_2d.x, -rotation_center_2d.y, 0.0f));
+
+	glm::mat4 translate_to_center_mat = glm::mat4(1.0f);
+	translate_to_center_mat = glm::translate(translate_to_center_mat, glm::vec3(rotation_center_2d.x, rotation_center_2d.y, 0.0f));
+
+	return translate_to_center_mat * rotate_around_origin_mat * translate_to_origin_mat;
+}
+
 bool ShootMode::handle_event(SDL_Event const& evt, glm::uvec2 const& window_size) {
 
 	if (evt.type == SDL_MOUSEMOTION) {
@@ -125,12 +141,33 @@ bool ShootMode::handle_event(SDL_Event const& evt, glm::uvec2 const& window_size
 			(evt.motion.x + 0.5f) / window_size.x * 2.0f - 1.0f,
 			(evt.motion.y + 0.5f) / window_size.y * -2.0f + 1.0f
 		);
-		if (pause_flag == 0) left_paddle.y = (clip_to_court * glm::vec3(clip_mouse, 1.0f)).y;
+		//if (pause_flag == 0) left_paddle.y = (clip_to_court * glm::vec3(clip_mouse, 1.0f)).y;
+		if (pause_flag == 0) {
+			float dx = (clip_to_court * glm::vec3(clip_mouse, 1.0f)).x - cannon_base.x;
+			float dy = (clip_to_court * glm::vec3(clip_mouse, 1.0f)).y - cannon_base.y;
+			float clip_to_cannon_base_angle = glm::atan(dy/dx);
+			if(dx > FLT_EPSILON)cannon_angle = clip_to_cannon_base_angle > 0 ? 
+						   std::min(clip_to_cannon_base_angle, max_cannon_elevation):
+						   std::max(clip_to_cannon_base_angle, -max_cannon_elevation);
+		}
 	}
 	else if (evt.type == SDL_KEYDOWN && evt.key.keysym.sym == SDLK_ESCAPE) {
 		std::cout << "Pause here " << std::endl;
 		pause_flag = pause_flag == 0 ? 1 : 0;
 		return true;
+	}
+	else if (evt.type == SDL_MOUSEBUTTONDOWN && evt.button.button == SDL_BUTTON_LEFT) {
+		if (shoot_flag == 0 && pause_flag == 0) {
+			shoot_flag = 1;
+			ball.x = -court_radius.x + barrel_offset + cannon_barrel_length[0] - ball_radius[0];
+			ball.y = 0.0f;
+			glm::vec4 reset_ball = glm::vec4(ball,0.0f,1.0f);
+			reset_ball = get_rotation_matrix(cannon_barrel, cannon_angle) * reset_ball;
+			ball.x = reset_ball.x;
+			ball.y = reset_ball.y;
+			ball_velocity.x = 20.0f * cos(cannon_angle);
+			ball_velocity.y = 20.0f * sin(cannon_angle);
+		}
 	}
 
 	return false;
@@ -142,22 +179,35 @@ void ShootMode::update(float elapsed) {
 	if (pause_flag) return;
 
 	static std::mt19937 mt; //mersenne twister pseudo-random number generator
+	//helper function to reset ball
+	auto reset_ball = [&]() {
+		shoot_flag = 0;
+		ball.x = -court_radius.x + ball_radius[0] + FLT_EPSILON;
+		ball.y = 0.0f;
+		ball_velocity.x = 0.0f;
+		ball_velocity.y = 0.0f;
+	};
 
 	//----- paddle update -----
 
 	{ //right player ai:
+		//speed of paddle doubles every four points:
+		float speed_multiplier = 2.0f + 0.5f * left_score / 4.0f;
+		//velocity cap
+		speed_multiplier = std::min(speed_multiplier, 2.0f);
+
 		ai_offset_update -= elapsed;
 		if (ai_offset_update < elapsed) {
-			//update again in [0.5,1.0) seconds:
-			ai_offset_update = (mt() / float(mt.max())) * 0.5f + 0.5f;
+			//update again in [1.5,2.0) seconds:
+			ai_offset_update = (mt() / float(mt.max())) * 1.5f + 1.5f;
 			ai_offset = (mt() / float(mt.max())) * 2.5f - 1.25f;
+			
 		}
-		if (right_paddle.y < ball.y + ai_offset) {
-			right_paddle.y = std::min(ball.y + ai_offset, right_paddle.y + 2.0f * elapsed);
+		if ((ai_offset > 0 && (court_radius.y - paddle_radius.y - right_paddle.y) < 0.3f) ||
+			(ai_offset < 0 && (-court_radius.y + paddle_radius.y - right_paddle.y) > -0.3f)) {
+			ai_offset = -ai_offset;
 		}
-		else {
-			right_paddle.y = std::max(ball.y + ai_offset, right_paddle.y - 2.0f * elapsed);
-		}
+		right_paddle.y = right_paddle.y + speed_multiplier * elapsed * ai_offset;
 	}
 
 	//clamp paddles to court:
@@ -169,18 +219,12 @@ void ShootMode::update(float elapsed) {
 
 	//----- ball update -----
 
-	//speed of ball doubles every four points:
-	float speed_multiplier = 4.0f * std::pow(2.0f, (left_score + right_score) / 4.0f);
-
-	//velocity cap, though (otherwise ball can pass through paddles):
-	speed_multiplier = std::min(speed_multiplier, 10.0f);
-
-	ball += elapsed * speed_multiplier * ball_velocity;
+	ball += elapsed * ball_velocity;
 
 	//---- collision handling ----
 
 	//paddles:
-	auto paddle_vs_ball = [this](glm::vec2 const& paddle) {
+	auto paddle_vs_ball = [this,&reset_ball](glm::vec2 const& paddle) {
 		//compute area of overlap:
 		glm::vec2 min = glm::max(paddle - paddle_radius, ball - ball_radius);
 		glm::vec2 max = glm::min(paddle + paddle_radius, ball + ball_radius);
@@ -188,62 +232,47 @@ void ShootMode::update(float elapsed) {
 		//if no overlap, no collision:
 		if (min.x > max.x || min.y > max.y) return;
 
-		if (max.x - min.x > max.y - min.y) {
-			//wider overlap in x => bounce in y direction:
-			if (ball.y > paddle.y) {
-				ball.y = paddle.y + paddle_radius.y + ball_radius.y;
-				ball_velocity.y = std::abs(ball_velocity.y);
-			}
-			else {
-				ball.y = paddle.y - paddle_radius.y - ball_radius.y;
-				ball_velocity.y = -std::abs(ball_velocity.y);
-			}
-		}
-		else {
-			//wider overlap in y => bounce in x direction:
-			if (ball.x > paddle.x) {
-				ball.x = paddle.x + paddle_radius.x + ball_radius.x;
-				ball_velocity.x = std::abs(ball_velocity.x);
-			}
-			else {
-				ball.x = paddle.x - paddle_radius.x - ball_radius.x;
-				ball_velocity.x = -std::abs(ball_velocity.x);
-			}
-			//warp y velocity based on offset from paddle center:
-			float vel = (ball.y - paddle.y) / (paddle_radius.y + ball_radius.y);
-			ball_velocity.y = glm::mix(ball_velocity.y, vel, 0.75f);
-		}
+		reset_ball();
+		left_score += 1;
+	
 	};
-	paddle_vs_ball(left_paddle);
+	//paddle_vs_ball(left_paddle);
 	paddle_vs_ball(right_paddle);
 
 	//court walls:
+
+	//upper wall
 	if (ball.y > court_radius.y - ball_radius.y) {
 		ball.y = court_radius.y - ball_radius.y;
 		if (ball_velocity.y > 0.0f) {
 			ball_velocity.y = -ball_velocity.y;
 		}
 	}
+	//lower wall
 	if (ball.y < -court_radius.y + ball_radius.y) {
 		ball.y = -court_radius.y + ball_radius.y;
 		if (ball_velocity.y < 0.0f) {
 			ball_velocity.y = -ball_velocity.y;
 		}
 	}
-
-	if (ball.x > court_radius.x - ball_radius.x) {
-		ball.x = court_radius.x - ball_radius.x;
-		if (ball_velocity.x > 0.0f) {
-			ball_velocity.x = -ball_velocity.x;
-			left_score += 1;
+	//right wall
+	if (ball.x >= court_radius.x - ball_radius.x) {
+		if (ball_velocity.x > FLT_EPSILON) {
+			reset_ball();
+			left_health -= 1;
 		}
 	}
-	if (ball.x < -court_radius.x + ball_radius.x) {
-		ball.x = -court_radius.x + ball_radius.x;
-		if (ball_velocity.x < 0.0f) {
-			ball_velocity.x = -ball_velocity.x;
-			right_score += 1;
+	//left wall
+	if (ball.x <= -court_radius.x + ball_radius.x) {
+		if (ball_velocity.x < -FLT_EPSILON) {
+			reset_ball();
+			left_health -= 1;
 		}
+	}
+
+	if (left_health <= 0) {
+		pause_flag == 1;
+
 	}
 
 	//----- gradient trails -----
@@ -267,6 +296,7 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 #define HEX_TO_U8VEC4( HX ) (glm::u8vec4( (HX >> 24) & 0xff, (HX >> 16) & 0xff, (HX >> 8) & 0xff, (HX) & 0xff ))
 	const glm::u8vec4 bg_color = HEX_TO_U8VEC4(0x193b59ff);
 	const glm::u8vec4 fg_color = HEX_TO_U8VEC4(0xf2d2b6ff);
+	const glm::u8vec4 health_color = HEX_TO_U8VEC4(0xf50303ff);
 	const glm::u8vec4 shadow_color = HEX_TO_U8VEC4(0xf2ad94ff);
 	const std::vector< glm::u8vec4 > trail_colors = {
 		HEX_TO_U8VEC4(0xf2ad9488),
@@ -296,7 +326,7 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 		vertices.emplace_back(glm::vec3(center.x + radius.x, center.y + radius.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
 		vertices.emplace_back(glm::vec3(center.x - radius.x, center.y + radius.y, 0.0f), color, glm::vec2(0.5f, 0.5f));
 	};
-	// borrowed from https://github.com/cccyf/15-466-f20-base0/blob/master/PongMode.cpp
+
 	auto draw_circle = [&vertices](glm::vec2 const& center, float const& radius, glm::u8vec4 const& color) {
 		auto degree = [&](int a) {return double(a) * M_PI / 180.0; };
 		for (int a = 0; a < 360; a += 1) {
@@ -321,6 +351,28 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 		}
 	};
 
+	//draw cannon barrel 
+	//inspired by https://github.com/bobowitz/15-666-boat-game
+	auto draw_cannon_barrel = [&](glm::vec2 const& center, glm::vec2 const& length, glm::vec2 const& radius, float const& angle, glm::u8vec4 const& color) {
+		
+		//integrate the transform matrices
+		glm::mat4 rotate_around_center_mat = get_rotation_matrix(center,angle);
+		
+		//draw the rotated barrel
+		glm::vec4 bot_left = rotate_around_center_mat * glm::vec4(center.x + barrel_offset, -radius[0], 0.0f, 1.0f);
+		glm::vec4 bot_right = rotate_around_center_mat * glm::vec4(center.x + barrel_offset + length[0], -radius[0], 0.0f, 1.0f);
+		glm::vec4 top_right = rotate_around_center_mat * glm::vec4(center.x + barrel_offset + length[0], radius[0], 0.0f, 1.0f);
+		glm::vec4 top_left = rotate_around_center_mat * glm::vec4(center.x + barrel_offset, radius[0], 0.0f, 1.0f);
+
+		vertices.emplace_back(glm::vec3(bot_left), color, glm::vec2(0.5f, 0.5f));
+		vertices.emplace_back(glm::vec3(bot_right), color, glm::vec2(0.5f, 0.5f));
+		vertices.emplace_back(glm::vec3(top_right), color, glm::vec2(0.5f, 0.5f));
+
+		vertices.emplace_back(glm::vec3(bot_left), color, glm::vec2(0.5f, 0.5f));
+		vertices.emplace_back(glm::vec3(top_right), color, glm::vec2(0.5f, 0.5f));
+		vertices.emplace_back(glm::vec3(top_left), color, glm::vec2(0.5f, 0.5f));
+	};
+
 	//shadows for everything (except the trail):
 
 	glm::vec2 s = glm::vec2(0.0f, -shadow_offset);
@@ -329,7 +381,7 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 	draw_rectangle(glm::vec2(court_radius.x + wall_radius, 0.0f) + s, glm::vec2(wall_radius, court_radius.y + 2.0f * wall_radius), shadow_color);
 	draw_rectangle(glm::vec2(0.0f, -court_radius.y - wall_radius) + s, glm::vec2(court_radius.x, wall_radius), shadow_color);
 	draw_rectangle(glm::vec2(0.0f, court_radius.y + wall_radius) + s, glm::vec2(court_radius.x, wall_radius), shadow_color);
-	draw_rectangle(left_paddle + s, paddle_radius, shadow_color);
+	//draw_rectangle(left_paddle + s, paddle_radius, shadow_color);
 	draw_rectangle(right_paddle + s, paddle_radius, shadow_color);
 	draw_circle(ball + s, ball_radius[0], shadow_color);
 
@@ -386,11 +438,12 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 	draw_rectangle(glm::vec2(0.0f, court_radius.y + wall_radius), glm::vec2(court_radius.x, wall_radius), fg_color);
 
 	//paddles:
-	draw_rectangle(left_paddle, paddle_radius, fg_color);
+	//draw_rectangle(left_paddle, paddle_radius, fg_color);
 	draw_rectangle(right_paddle, paddle_radius, fg_color);
 
 	//cannon base:
 	draw_cannon_base(cannon_base, cannon_base_radius[0], fg_color);
+	draw_cannon_barrel(cannon_barrel, cannon_barrel_length, cannon_barrel_radius,cannon_angle, fg_color);
 
 
 	//ball:
@@ -398,13 +451,15 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 
 	//scores:
 	glm::vec2 score_radius = glm::vec2(0.1f, 0.1f);
-	for (uint32_t i = 0; i < left_score; ++i) {
-		draw_rectangle(glm::vec2(-court_radius.x + (2.0f + 3.0f * i) * score_radius.x, court_radius.y + 2.0f * wall_radius + 2.0f * score_radius.y), score_radius, fg_color);
+	{
+		uint32_t i = 0;
+		for (; i < max_health; ++i) {
+			if(i < left_health)draw_rectangle(glm::vec2(-court_radius.x + (2.0f + 3.0f * i) * score_radius.x, court_radius.y + 2.0f * wall_radius + 2.0f * score_radius.y), score_radius, health_color);
+		}
+		for (; i < left_score + max_health; ++i) {
+			draw_rectangle(glm::vec2(-court_radius.x + (2.0f + 3.0f * i) * score_radius.x, court_radius.y + 2.0f * wall_radius + 2.0f * score_radius.y), score_radius, fg_color);
+		}
 	}
-	for (uint32_t i = 0; i < right_score; ++i) {
-		draw_rectangle(glm::vec2(court_radius.x - (2.0f + 3.0f * i) * score_radius.x, court_radius.y + 2.0f * wall_radius + 2.0f * score_radius.y), score_radius, fg_color);
-	}
-
 
 
 	//------ compute court-to-window transform ------
@@ -494,3 +549,5 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 	GL_ERRORS(); //PARANOIA: print errors just in case we did something wrong.
 
 }
+
+

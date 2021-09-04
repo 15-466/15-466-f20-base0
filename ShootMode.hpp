@@ -20,6 +20,7 @@ struct ShootMode : Mode {
 	virtual bool handle_event(SDL_Event const&, glm::uvec2 const& window_size) override;
 	virtual void update(float elapsed) override;
 	virtual void draw(glm::uvec2 const& drawable_size) override;
+	glm::mat4 get_rotation_matrix(glm::vec2 const& center, float const& angle);
 
 	//----- game state -----
 
@@ -30,23 +31,30 @@ struct ShootMode : Mode {
 	glm::vec2 left_paddle = glm::vec2(-court_radius.x + 0.5f, 0.0f);
 	glm::vec2 right_paddle = glm::vec2(court_radius.x - 0.5f, 0.0f);
 
-	glm::vec2 ball = glm::vec2(0.0f, 0.0f);
-	glm::vec2 ball_velocity = glm::vec2(-1.0f, 0.0f);
+	glm::vec2 ball = glm::vec2(-court_radius.x + ball_radius[0] + FLT_EPSILON, 0.0f);
+	glm::vec2 ball_velocity = glm::vec2(0.0f, 0.0f);
 
 	glm::vec2 cannon_base = glm::vec2(-court_radius.x, 0.0f);
 	glm::vec2 cannon_base_radius = glm::vec2(0.8f, 0.8f);
 
 	glm::vec2 cannon_barrel = cannon_base;
-	glm::vec2 cannon_barrel_length = glm::vec2(1.5f, 1.5f); 
+	glm::vec2 cannon_barrel_length = glm::vec2(1.2f, 1.2f); 
 	glm::vec2 cannon_barrel_radius = glm::vec2(0.25f, 0.25f);
+	glm::vec3 cannon_rotate_axis = glm::vec3(0.0f,0.0f, 1.0f);
+	float cannon_angle = 0;  //in radians
+	float max_cannon_elevation = glm::radians(70.0f);  //in radians
+	float barrel_offset = 0.5f;
 
+	uint32_t max_score = 16;
 	uint32_t left_score = 0;
-	uint32_t right_score = 0;
+	uint32_t max_health = 3;
+	uint32_t left_health = max_health;
 
 	float ai_offset = 0.0f;
 	float ai_offset_update = 0.0f;
 
 	uint32_t pause_flag = 0;
+	uint32_t shoot_flag = 0;
 
 	//----- pretty gradient trails -----
 
