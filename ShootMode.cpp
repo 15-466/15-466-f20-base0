@@ -6,7 +6,9 @@
 //for glm::value_ptr() :
 #include <glm/gtc/type_ptr.hpp>
 
+
 #include <random>
+#include <chrono>
 
 ShootMode::ShootMode() {
 
@@ -153,8 +155,28 @@ bool ShootMode::handle_event(SDL_Event const& evt, glm::uvec2 const& window_size
 	}
 	else if (evt.type == SDL_KEYDOWN && evt.key.keysym.sym == SDLK_ESCAPE) {
 		std::cout << "Pause here " << std::endl;
-		pause_flag = pause_flag == 0 ? 1 : 0;
+		if(game_flag == 0)pause_flag = pause_flag == 0 ? 1 : 0;
 		return true;
+	}
+	else if (evt.type == SDL_KEYDOWN && evt.key.keysym.sym == SDLK_q) {
+		if(game_flag == 0 && pause_flag == 1) Mode::set_current(nullptr);
+	}
+	else if (evt.type == SDL_KEYDOWN && evt.key.keysym.sym == SDLK_y) {
+		if (game_flag != 0 || pause_flag == 1) {
+			std::cout << "restart game" << std::endl;
+			left_score = 0;
+			left_health = max_health;
+			pause_flag = 0;
+			shoot_flag = 0;
+			game_flag = 0;
+			left_paddle = glm::vec2(0.0f, 0.0f);
+			right_paddle = glm::vec2(court_radius.x - 0.5f, 0.0f);
+			ball = glm::vec2(-court_radius.x + ball_radius[0] + FLT_EPSILON, 0.0f);
+			cannon_angle = 0;
+		}
+	}
+	else if (evt.type == SDL_KEYDOWN && evt.key.keysym.sym == SDLK_n) {
+		if (game_flag != 0)Mode::set_current(nullptr);
 	}
 	else if (evt.type == SDL_MOUSEBUTTONDOWN && evt.button.button == SDL_BUTTON_LEFT) {
 		if (shoot_flag == 0 && pause_flag == 0) {
@@ -178,7 +200,8 @@ void ShootMode::update(float elapsed) {
 	// if pause, do not update
 	if (pause_flag) return;
 
-	static std::mt19937 mt; //mersenne twister pseudo-random number generator
+	unsigned seed = (unsigned)std::chrono::system_clock::now().time_since_epoch().count();
+	static std::mt19937 mt(seed); //mersenne twister pseudo-random number generator
 	//helper function to reset ball
 	auto reset_ball = [&]() {
 		shoot_flag = 0;
@@ -189,26 +212,30 @@ void ShootMode::update(float elapsed) {
 	};
 
 	//----- paddle update -----
-
-	{ //right player ai:
+	//paddle ai:
+	auto paddle_move = [&](glm::vec2& paddle, float& ai_offset_update, float& ai_offset){
 		//speed of paddle doubles every four points:
-		float speed_multiplier = 2.0f + 0.5f * left_score / 4.0f;
+		float speed_multiplier = 2.0f + 1.0f * left_score / 2.0f;
 		//velocity cap
-		speed_multiplier = std::min(speed_multiplier, 2.0f);
+		speed_multiplier = std::min(speed_multiplier, 10.0f);
 
 		ai_offset_update -= elapsed;
 		if (ai_offset_update < elapsed) {
-			//update again in [1.5,2.0) seconds:
-			ai_offset_update = (mt() / float(mt.max())) * 1.5f + 1.5f;
+			//update again in [2.0,3.5) seconds:
+			ai_offset_update = (mt() / float(mt.max())) * 1.5f + 2.0f;
 			ai_offset = (mt() / float(mt.max())) * 2.5f - 1.25f;
-			
+			std::cout << ai_offset << std::endl;
+
 		}
-		if ((ai_offset > 0 && (court_radius.y - paddle_radius.y - right_paddle.y) < 0.3f) ||
-			(ai_offset < 0 && (-court_radius.y + paddle_radius.y - right_paddle.y) > -0.3f)) {
+		if ((ai_offset > 0 && (court_radius.y - paddle_radius.y - paddle.y) < 0.3f) ||
+			(ai_offset < 0 && (-court_radius.y + paddle_radius.y - paddle.y) > -0.3f)) {
 			ai_offset = -ai_offset;
 		}
-		right_paddle.y = right_paddle.y + speed_multiplier * elapsed * ai_offset;
-	}
+		paddle.y = paddle.y + speed_multiplier * elapsed * ai_offset;
+	};
+
+	paddle_move(left_paddle, left_ai_offset_update, left_ai_offset);
+	paddle_move(right_paddle, right_ai_offset_update, right_ai_offset);
 
 	//clamp paddles to court:
 	right_paddle.y = std::max(right_paddle.y, -court_radius.y + paddle_radius.y);
@@ -224,20 +251,25 @@ void ShootMode::update(float elapsed) {
 	//---- collision handling ----
 
 	//paddles:
-	auto paddle_vs_ball = [this,&reset_ball](glm::vec2 const& paddle) {
+	auto paddle_vs_ball = [this,&reset_ball](glm::vec2 const& paddle, bool obstacle) {
 		//compute area of overlap:
 		glm::vec2 min = glm::max(paddle - paddle_radius, ball - ball_radius);
 		glm::vec2 max = glm::min(paddle + paddle_radius, ball + ball_radius);
 
 		//if no overlap, no collision:
 		if (min.x > max.x || min.y > max.y) return;
-
-		reset_ball();
-		left_score += 1;
+		if (obstacle) {
+			reset_ball();
+			left_health -= 1;
+		}
+		else {
+			reset_ball();
+			left_score += 1;
+		}
 	
 	};
-	//paddle_vs_ball(left_paddle);
-	paddle_vs_ball(right_paddle);
+	paddle_vs_ball(left_paddle, true);
+	paddle_vs_ball(right_paddle,false);
 
 	//court walls:
 
@@ -269,10 +301,16 @@ void ShootMode::update(float elapsed) {
 			left_health -= 1;
 		}
 	}
-
+	
+	//game status change
 	if (left_health <= 0) {
-		pause_flag == 1;
+		pause_flag = 1;
+		game_flag = 1;
 
+	}
+	if (left_score >= max_score) {
+		pause_flag = 1;
+		game_flag = 2;
 	}
 
 	//----- gradient trails -----
@@ -298,6 +336,7 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 	const glm::u8vec4 fg_color = HEX_TO_U8VEC4(0xf2d2b6ff);
 	const glm::u8vec4 health_color = HEX_TO_U8VEC4(0xf50303ff);
 	const glm::u8vec4 shadow_color = HEX_TO_U8VEC4(0xf2ad94ff);
+	const glm::u8vec4 health_shadow = HEX_TO_U8VEC4(0x920a1eff);
 	const std::vector< glm::u8vec4 > trail_colors = {
 		HEX_TO_U8VEC4(0xf2ad9488),
 		HEX_TO_U8VEC4(0xf2897288),
@@ -381,8 +420,8 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 	draw_rectangle(glm::vec2(court_radius.x + wall_radius, 0.0f) + s, glm::vec2(wall_radius, court_radius.y + 2.0f * wall_radius), shadow_color);
 	draw_rectangle(glm::vec2(0.0f, -court_radius.y - wall_radius) + s, glm::vec2(court_radius.x, wall_radius), shadow_color);
 	draw_rectangle(glm::vec2(0.0f, court_radius.y + wall_radius) + s, glm::vec2(court_radius.x, wall_radius), shadow_color);
-	//draw_rectangle(left_paddle + s, paddle_radius, shadow_color);
-	draw_rectangle(right_paddle + s, paddle_radius, shadow_color);
+	draw_rectangle(left_paddle + s, paddle_radius, shadow_color);
+	draw_rectangle(right_paddle + s, paddle_radius, health_shadow);
 	draw_circle(ball + s, ball_radius[0], shadow_color);
 
 	//ball's trail:
@@ -438,8 +477,8 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 	draw_rectangle(glm::vec2(0.0f, court_radius.y + wall_radius), glm::vec2(court_radius.x, wall_radius), fg_color);
 
 	//paddles:
-	//draw_rectangle(left_paddle, paddle_radius, fg_color);
-	draw_rectangle(right_paddle, paddle_radius, fg_color);
+	draw_rectangle(left_paddle, paddle_radius, fg_color);
+	draw_rectangle(right_paddle, paddle_radius, health_color);
 
 	//cannon base:
 	draw_cannon_base(cannon_base, cannon_base_radius[0], fg_color);
@@ -460,6 +499,7 @@ void ShootMode::draw(glm::uvec2 const& drawable_size) {
 			draw_rectangle(glm::vec2(-court_radius.x + (2.0f + 3.0f * i) * score_radius.x, court_radius.y + 2.0f * wall_radius + 2.0f * score_radius.y), score_radius, fg_color);
 		}
 	}
+
 
 
 	//------ compute court-to-window transform ------

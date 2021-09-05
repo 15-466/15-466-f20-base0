@@ -4,7 +4,6 @@
 #include "GL.hpp"
 
 #include <glm/glm.hpp>
-
 #include <vector>
 #include <deque>
 
@@ -28,7 +27,7 @@ struct ShootMode : Mode {
 	glm::vec2 paddle_radius = glm::vec2(0.2f, 1.0f);
 	glm::vec2 ball_radius = glm::vec2(0.2f, 0.2f);
 
-	glm::vec2 left_paddle = glm::vec2(-court_radius.x + 0.5f, 0.0f);
+	glm::vec2 left_paddle = glm::vec2(0.0f, -3.0f);
 	glm::vec2 right_paddle = glm::vec2(court_radius.x - 0.5f, 0.0f);
 
 	glm::vec2 ball = glm::vec2(-court_radius.x + ball_radius[0] + FLT_EPSILON, 0.0f);
@@ -38,23 +37,26 @@ struct ShootMode : Mode {
 	glm::vec2 cannon_base_radius = glm::vec2(0.8f, 0.8f);
 
 	glm::vec2 cannon_barrel = cannon_base;
-	glm::vec2 cannon_barrel_length = glm::vec2(1.2f, 1.2f); 
+	glm::vec2 cannon_barrel_length = glm::vec2(1.8f, 1.8f); 
 	glm::vec2 cannon_barrel_radius = glm::vec2(0.25f, 0.25f);
 	glm::vec3 cannon_rotate_axis = glm::vec3(0.0f,0.0f, 1.0f);
 	float cannon_angle = 0;  //in radians
 	float max_cannon_elevation = glm::radians(70.0f);  //in radians
 	float barrel_offset = 0.5f;
 
-	uint32_t max_score = 16;
+	uint32_t max_score = 10;
 	uint32_t left_score = 0;
 	uint32_t max_health = 3;
 	uint32_t left_health = max_health;
 
-	float ai_offset = 0.0f;
-	float ai_offset_update = 0.0f;
+	float left_ai_offset = 0.0f;
+	float right_ai_offset = 0.0f;
+	float left_ai_offset_update = 0.0f;
+	float right_ai_offset_update = 0.0f;
 
 	uint32_t pause_flag = 0;
 	uint32_t shoot_flag = 0;
+	uint32_t game_flag = 0; //1:game over; 2:win
 
 	//----- pretty gradient trails -----
 
